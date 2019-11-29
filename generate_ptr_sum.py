@@ -35,8 +35,8 @@ def generate_guard_top(file, function_name, name):
    function_name_upper = function_name.upper()
 
    file.write("#pragma once\n")
-   file.write("#ifndef " + function_name_upper + "_" + name + "_HPP_INCLUDED\n")
-   file.write("#define " + function_name_upper + "_" + name + "_HPP_INCLUDED\n")
+   file.write("#ifndef " + function_name_upper + (name.empty() if "" else "_" + name) + "_HPP_INCLUDED\n")
+   file.write("#define " + function_name_upper + (name.empty() if "" else "_" + name) + "_HPP_INCLUDED\n")
    file.write("\n")
 
 #
@@ -62,7 +62,7 @@ def generate_header_code(file, order, function_name, arguments):
 #
 #
 #
-def generate_header_wrapper_code(file, order, function_name, arguments):
+def generate_header_wrapper_code(file, order, function_name, arguments, the_range):
    file.write("\n")
    file.write("#include <climits> /* for CHAR_BIT */\n")
    file.write("\n")
@@ -81,7 +81,8 @@ def generate_header_wrapper_code(file, order, function_name, arguments):
    file.write("{\n")
    file.write("   T result;\n")
    file.write("\n")
-   for i in range(1, order + 1):
+   #for i in range(1, order + 1):
+   for i in the_range:
       file.write("   ")
       if i == 1:
          file.write("if")
@@ -123,7 +124,22 @@ def generate_code_for_branching(file, order, function_name, arguments, operation
    """Function definition"""
    function_name_upper = function_name.upper()
 
-   operation = lambda index : operation_str.replace("idx", index)
+   if isinstance(operation_str, str):
+      operation_str = [ operation_str ]
+
+   def operation(oper_str, rindex, pindex):
+      operation_str_local = oper_str
+      if rindex != -1:
+         operation_str_local = operation_str_local.replace("result", "result_array")
+         operation_str_local = operation_str_local.replace("<ridx>", str(rindex))
+      else:
+         operation_str_local = operation_str_local.replace("[<ridx>]", "")
+         operation_str_local = operation_str_local.replace("<ridx>", "")
+      operation_str_local = operation_str_local.replace("<pidx>", str(pindex))
+      if not operation_str_local.endswith(";"):
+         operation_str_local = operation_str_local + ";"
+      return operation_str_local
+   
    register  = ""
    #register  = "register "
 
@@ -140,8 +156,11 @@ def generate_code_for_branching(file, order, function_name, arguments, operation
              )
 
    if order != 1:
-      for i in range(0, order):
-         file.write("   " + register + "T result" + str(i) + " = static_cast<T>(0.0);\n")
+      #for i in range(0, order):
+      file.write("   " + register + "T result_array[" + str(order) + "] = {static_cast<T>(0.0)")
+      for i in range(1, order):
+         file.write(", static_cast<T>(0.0)")
+      file.write("};\n")
       
       file.write("\n")
       file.write("   auto modulo = size % " + str(order) + ";\n")
@@ -168,27 +187,31 @@ def generate_code_for_branching(file, order, function_name, arguments, operation
          else:
             file.write("      for(int i = 0; i < sizem" + str(i) + "; i += " + str(order) + ")\n")
          file.write("      {\n")
-         file.write("         result" + str(0) + " " + operation("i") + ";\n")
-         for k in range(1, order):
-            file.write("         result" + str(k) + " " + operation("i + " + str(k)) + ";\n")
-         file.write("      }\n")
 
-         for j in range(0, i):
-            file.write("      result" + str(j) + " " + operation("sizem" + str(j + 1)) + ";\n")
+         for oper_str in operation_str:
+            file.write("         " + operation(oper_str, str(0), "i") + "\n")
+            for k in range(1, order):
+               file.write("         " + operation(oper_str, str(k), "i + " + str(k)) + "\n")
+         file.write("      }\n")
+         
+         for oper_str in operation_str:
+            for j in range(0, i):
+               file.write("      " + operation(oper_str, str(j), "sizem" + str(j + 1)) + "\n")
          file.write("   }\n")
       
       file.write("\n")
       
-      file.write("   auto result = result0")
+      file.write("   auto result = result_array[0]")
       for i in range(1, order):
-         file.write(" + result" + str(i))
+         file.write(" + result_array[" + str(i) +"]")
       file.write(";\n")
    else:
       file.write("   " + register + "T result = static_cast<T>(0.0);\n")
       file.write("\n")
       file.write("   for(int i = 0; i < size; i += 1)\n")
       file.write("   {\n")
-      file.write("      result " + operation("i") + ";\n")
+      for oper_str in operation_str:
+         file.write("      " + operation(oper_str, -1, "i") + "\n")
       file.write("   }\n")
 
    
@@ -213,31 +236,42 @@ def main():
    order    = options.order or 2
    
    # Data
-   #function_name = "ptr_sum"
-   #arguments     = ["ptr"]
-   #operation_str = "+= ptr[idx]"
-   function_name = "ptr_dot"
+   function_name = "ptr_" + filename
    arguments     = ["ptr1", "ptr2"]
-   operation_str = "+= ptr1[idx] * ptr2[idx]"
+   operation_str = "result[<ridx>] += ptr1[<pidx>] * ptr2[<pidx>];"
+   #operation_str = "result[<ridx>] += (ptr1[<pidx>] - ptr2[<pidx>]) * (ptr1[<pidx>] - ptr2[<pidx>]);"
+   #operation_str = [  "auto intermed<ridx> = ptr1[<pidx>] - ptr2[<pidx>];",
+   #                   "result[<ridx>] += intermed<ridx> * intermed<ridx>;"
+   #                ]
 
    # open file
-   header_file = open(filename + ".hpp", 'w')
-   declar_file = open(filename + "_decl.hpp", 'w')
-   source_file = open(filename + "_impl.hpp", 'w')
+   #header_file = open(filename + ".hpp", 'w')
+   #declar_file = open(filename + "_decl.hpp", 'w')
+   source_file = open(filename + ".hpp", 'w')
 
-   generate_header_file(header_file, filename, function_name)
-   
-   generate_guard_top(declar_file, function_name, "DECL")
-   for i in range(1, order + 1):
-      generate_header_code(declar_file, i, function_name, arguments)
-   generate_header_wrapper_code(declar_file, order, function_name, arguments)
-   generate_guard_bottom(declar_file, function_name, "DECL")
+   the_range = []
+   idx = 1
+   while True:
+      if idx > order:
+         break
+      the_range.append(idx)
+      idx = idx * 2
 
-   generate_guard_top(source_file, function_name, "IMPL")
+   #generate_header_file(header_file, filename, function_name)
+
+   generate_guard_top(source_file, function_name, "")
+   #generate_guard_top(source_file, function_name, "IMPL")
    # make individual dirprod function
-   for i in range(1, order + 1):
+   #for i in range(1, order + 1):
+   for i in the_range:
       generate_code_for_branching(source_file, i, function_name, arguments, operation_str)
-   generate_guard_bottom(source_file, function_name, "IMPL")
+   #generate_guard_bottom(source_file, function_name, "IMPL")
+   
+   #for i in range(1, order + 1):
+   #for i in the_range:
+   #   generate_header_code(declar_file, i, function_name, arguments)
+   generate_header_wrapper_code(source_file, order, function_name, arguments, the_range)
+   generate_guard_bottom(source_file, function_name, "")
    
 if __name__ == "__main__":
    main()

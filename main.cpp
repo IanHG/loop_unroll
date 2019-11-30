@@ -56,9 +56,9 @@ double dot_pd_sse(const double* const a, const double* const b, int n)
 
 	for(i = 0; i < (n & (-2)); i += 2) 
    {
-		__m128d a2 = _mm_loadu_pd(&a[i]);
-		__m128d b2 = _mm_loadu_pd(&b[i]);
-		sum2 = _mm_add_pd(_mm_mul_pd(a2, b2), sum2);
+      __m128d a2 = _mm_loadu_pd(&a[i]);
+      __m128d b2 = _mm_loadu_pd(&b[i]);
+      sum2 = _mm_add_pd(_mm_mul_pd(a2, b2), sum2);
 	}
 
 	double out[2];
@@ -79,8 +79,8 @@ double dot_pd_avx2(const double* const __restrict a, const double* const __restr
    const int until = (n & (-3));
    for(i = 0; i < until; i += 4)
    {
-		__m256d a4 = _mm256_loadu_pd(&a[i]);
-		__m256d b4 = _mm256_loadu_pd(&b[i]);
+      __m256d a4 = _mm256_loadu_pd(&a[i]);
+      __m256d b4 = _mm256_loadu_pd(&b[i]);
       sum4 = _mm256_add_pd(_mm256_mul_pd(a4, b4), sum4);
    }
 

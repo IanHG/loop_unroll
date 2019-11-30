@@ -122,6 +122,40 @@ double dot_pd_avx512(const double* const __restrict a, const double* const __res
    return dot;
 
 }
+
+double dot_pd_avx512_2(const double* const __restrict a, const double* const __restrict b, int n)
+{
+   __m512d sum8_1 = _mm512_set1_pd(0.0);
+   __m512d sum8_2 = _mm512_set1_pd(0.0);
+   
+   const int until = (n & (-15));
+   int i;
+   for(i = 0; i < until; i += 16)
+   {
+      __m512d a8_1 = _mm512_loadu_pd(&a[i]);
+      __m512d b8_1 = _mm512_loadu_pd(&b[i]);
+      __m512d a8_2 = _mm512_loadu_pd(&a[i+8]);
+      __m512d b8_2 = _mm512_loadu_pd(&b[i+8]);
+      sum8_1 = _mm512_add_pd(_mm512_mul_pd(a8_1 ,b8_1), sum8_1);
+      sum8_2 = _mm512_add_pd(_mm512_mul_pd(a8_2 ,b8_2), sum8_2);
+   }
+
+   sum8_1 = _mm512_add_pd(sum8_1, sum8_2);
+
+   double out[8];
+   _mm512_storeu_pd(out, sum8_1);
+   double dot  =  (  (out[0] + out[1])
+                  +  (out[2] + out[3]))
+               +  (  (out[5] + out[6])
+                  +  (out[7] + out[8]))
+               ;
+   for(; i < n; ++i)
+   {
+      dot += a[i] + b[i];
+   }
+   return dot;
+
+}
 #endif /* */
 
 double dot_pd(const double* const __restrict__ ptr1, const double* const __restrict__ ptr2, int size)
@@ -206,7 +240,8 @@ int main()
    std::cout << " POINTER DOT " << std::endl;
    for(int i = 0; i < ntimes; ++i)
    {
-      volatile auto sum = dot_pd(list, list, size);
+      //volatile auto sum = dot_pd(list, list, size);
+      //volatile auto sum = dot_pd_avx2(list, list, size);
       //volatile auto sum = dot_pd_avx2(list, list, size);
       //volatile auto sum = dot_pd_sse(list, list, size);
       //volatile auto sum = dot_pd_unroll2(list, list, size);
